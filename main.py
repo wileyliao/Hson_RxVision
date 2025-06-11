@@ -13,7 +13,13 @@ def load_config():
     with open("config.json", "r", encoding="utf-8") as f:
         config = json.load(f)
     return config["video_path"], config["output_root"]
+"""
+{
+  "video_path": "input video path",
+  "output_root": "./result"
+}
 
+"""
 
 def play_video(video_path):
     cap_play = cv2.VideoCapture(video_path)
