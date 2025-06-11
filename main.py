@@ -1,25 +1,60 @@
-# main function
-
+import os
+import json
+import cv2
+import threading
+from pathlib import Path
 from stage_1 import stage_1_main
 from stage_2 import stage_2_main
 from stage_3 import stage_3_main
-from draw_result import draw_result_main
+from draw_result import draw_results
+
+
+def load_config():
+    with open("config.json", "r", encoding="utf-8") as f:
+        config = json.load(f)
+    return config["video_path"], config["output_root"]
+
+
+def play_video(video_path):
+    cap_play = cv2.VideoCapture(video_path)
+    fps = cap_play.get(cv2.CAP_PROP_FPS)
+    while cap_play.isOpened():
+        ret, frame = cap_play.read()
+        if not ret:
+            break
+        resized_frame = cv2.resize(frame, (960, 720))
+        cv2.imshow("原始影片播放中", resized_frame)
+        if cv2.waitKey(int(1000 // fps)) & 0xFF != 255:
+            break
+    cap_play.release()
+    cv2.destroyAllWindows()
+
 
 def main():
-    """
-    steps:
-        1. 讀取frame
-        2. Stage_1模型(定位排裝位置),之後更新為定位排裝、針劑、餐包位置
-            --> input(image)：frame
-            --> output(image)：crop box/boxes from model(frame)
-        3. Stage_2模型
-            --> input(image)：box
-            --> output(dict)：{'box': front or back}
-        4. Stage_3模型
-            --> input(image, dict)：output from Stage_1, output from Stage_2
-            --> output(dict)：result of box/boxes
-        5. draw result
-            --> input(image): box/boxes, output from Stage_3
-            --> output(image): result drawing on box
-        6. plt.show(draw result)
-    """
+    video_path, output_root_base = load_config()
+    output_root_base = Path(output_root_base)
+    output_root_base.mkdir(parents=True, exist_ok=True)
+
+    try_idx = 1
+    while (output_root_base / f"try{try_idx}").exists():
+        try_idx += 1
+    current_try = output_root_base / f"try{try_idx}"
+    current_try.mkdir()
+
+    threading.Thread(target=play_video, args=(video_path,), daemon=True).start()
+
+    print("🚀 Stage 1: 擷取最佳幀...")
+    term_data = stage_1_main(video_path, current_try)
+
+    print("🚀 Stage 2: 分類文字面 / 藥丸面...")
+    classified_data = stage_2_main(term_data)
+
+    print("🚀 Stage 3: OCR 或 藥丸辨識...")
+    result_images, result_labels = stage_3_main(classified_data)
+
+    print("🖼️ 繪圖與儲存...")
+    draw_results(result_images, result_labels, current_try / "summary.png")
+
+
+if __name__ == "__main__":
+    main()
